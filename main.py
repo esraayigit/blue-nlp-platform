@@ -62,16 +62,14 @@ output_details = interpreter.get_output_details()
 
 print("TFLite model hazır.")
 
-# TFLite indeks eşleşmeleri (Colab Hücre 13 çıktısına göre)
-# [1 6] -> Intent
-INDEX_INTENT = next(o['index'] for o in output_details if o['shape'][1] == 6 and 'StatefulPartitionedCall:0' in o['name'])
-# [1 6] -> Emotion
-INDEX_EMOTION = next(o['index'] for o in output_details if o['shape'][1] == 6 and 'StatefulPartitionedCall:1' in o['name'])
-# [1 1] -> Sarcasm
-INDEX_SARCASM = next(o['index'] for o in output_details if o['shape'][1] == 1)
-# [1 4] -> Stage
-INDEX_STAGE = next(o['index'] for o in output_details if o['shape'][1] == 4)
-
+# [1 6] -> Emotion (Alfabetik sırada 'e' önce gelir)
+INDEX_EMOTION = next(o['index'] for o in output_details if o['shape'][1] == 6 and 'StatefulPartitionedCall:0' in o['name'])
+# [1 6] -> Intent (Alfabetik sırada 'i' sonra gelir)
+INDEX_INTENT = next(o['index'] for o in output_details if o['shape'][1] == 6 and 'StatefulPartitionedCall:1' in o['name'])
+# [1 4] -> Stage (Alfabetik sırada 's' sonra gelir)
+INDEX_STAGE = next(o['index'] for o in output_details if o['shape'][1] == 4 and 'StatefulPartitionedCall:2' in o['name'])
+# [1 1] -> Sarcasm (Alfabetik sırada 's' sonra gelir)
+INDEX_SARCASM = next(o['index'] for o in output_details if o['shape'][1] == 1 and 'StatefulPartitionedCall:3' in o['name'])
 # =========================================================
 # FASTAPI APP
 # =========================================================
