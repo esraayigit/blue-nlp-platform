@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-tensorflow-cpu
+tensorflow==2.16.1
 transformers
 firebase-admin
 numpy
