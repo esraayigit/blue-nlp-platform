@@ -1,9 +1,12 @@
 import os
 os.environ["KERAS_BACKEND"] = "tensorflow"
 
+import json
 import uvicorn
 import numpy as np
 import tensorflow as tf
+
+from datetime import datetime
 
 from transformers import AutoTokenizer
 
@@ -13,14 +16,18 @@ from firebase_admin import credentials, firestore
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from datetime import datetime
-
 # =========================================================
 # FIREBASE
 # =========================================================
 
-cred = credentials.Certificate("serviceAccountKey.json")
-firebase_admin.initialize_app(cred)
+firebase_json = json.loads(
+    os.environ["FIREBASE_CREDENTIALS"]
+)
+
+cred = credentials.Certificate(firebase_json)
+
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 
@@ -30,7 +37,11 @@ db = firestore.client()
 
 model_name = "ytu-ce-cosmos/turkish-small-bert-uncased"
 
+print("Tokenizer yükleniyor...")
+
 tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+print("Tokenizer hazır.")
 
 # =========================================================
 # TFLITE MODEL
@@ -86,7 +97,19 @@ class PatientData(BaseModel):
 
 @app.get("/")
 async def root():
-    return {"status": "Backend çalışıyor"}
+    return {
+        "status": "Backend çalışıyor"
+    }
+
+# =========================================================
+# HEALTH CHECK
+# =========================================================
+
+@app.get("/health")
+async def health():
+    return {
+        "ok": True
+    }
 
 # =========================================================
 # ANALYZE
@@ -106,7 +129,10 @@ async def analyze_text(data: PatientData):
     input_ids = encoded["input_ids"].astype(np.int32)
     attention_mask = encoded["attention_mask"].astype(np.int32)
 
-    # INPUT VER
+    # =====================================================
+    # INPUT
+    # =====================================================
+
     interpreter.set_tensor(
         input_details[0]['index'],
         input_ids
@@ -117,23 +143,33 @@ async def analyze_text(data: PatientData):
         attention_mask
     )
 
-    # ÇALIŞTIR
+    # =====================================================
+    # RUN
+    # =====================================================
+
     interpreter.invoke()
 
-    # OUTPUT AL
-    stage_output = interpreter.get_tensor(
-        output_details[0]['index']
-    )
+    # =====================================================
+    # OUTPUTS
+    # =====================================================
 
-    emotion_output = interpreter.get_tensor(
-        output_details[1]['index']
-    )
+    outputs = [
+        interpreter.get_tensor(o['index'])
+        for o in output_details
+    ]
+
+    stage_output = outputs[0]
+    emotion_output = outputs[1]
 
     stage_idx = int(np.argmax(stage_output[0]))
     emotion_idx = int(np.argmax(emotion_output[0]))
 
     final_stage = stages[stage_idx]
     final_emotion = emotions[emotion_idx]
+
+    # =====================================================
+    # FIRESTORE SAVE
+    # =====================================================
 
     try:
 
@@ -142,11 +178,15 @@ async def analyze_text(data: PatientData):
             "inputText": data.text,
             "stage": final_stage,
             "emotion": final_emotion,
-            "timestamp": datetime.now()
+            "timestamp": datetime.utcnow()
         })
 
     except Exception as e:
         print(f"Firestore hatası: {e}")
+
+    # =====================================================
+    # RESPONSE
+    # =====================================================
 
     return {
         "stage": final_stage,
