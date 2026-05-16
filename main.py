@@ -67,21 +67,24 @@ print("TFLite model hazır.")
 # LABELS
 # =========================================================
 
+# =========================================================
+# LABELS (Eğitimdeki LabelEncoder'ın alfabetik sırası)
+# =========================================================
+
 stages = [
-    'değerlendirme',
-    'hipotez',
-    'kesin tanı',
-    'tedavi',
-    'test'
+    'Diğer', 
+    'Gözlem', 
+    'Hipotez/Değerlendirme', 
+    'Tedavi/Müdahale', 
+    'Test/Tanı'
 ]
 
 emotions = [
-    'alaycı',
-    'ciddi',
-    'endişe',
-    'korku',
-    'nötr',
-    'odaklanmış'
+    'Alaycı', 
+    'Empatik/Umutlu', 
+    'Kaygılı/Korkmuş', 
+    'Nötr/Ciddi', 
+    'Şaşkın'
 ]
 
 # =========================================================
@@ -132,6 +135,57 @@ async def analyze_text(data: PatientData):
     input_ids = encoded["input_ids"].astype(np.int32)
     attention_mask = encoded["attention_mask"].astype(np.int32)
 
+    # =====================================================
+    # GÜVENLİ INPUT EŞLEŞTİRME (İsme göre bul)
+    # =====================================================
+    idx_input_ids = next(i['index'] for i in input_details if 'input_ids' in i['name'])
+    idx_attention_mask = next(i['index'] for i in input_details if 'attention_mask' in i['name'])
+
+    interpreter.set_tensor(idx_input_ids, input_ids)
+    interpreter.set_tensor(idx_attention_mask, attention_mask)
+
+    # =====================================================
+    # RUN
+    # =====================================================
+    interpreter.invoke()
+
+    # =====================================================
+    # GÜVENLİ OUTPUT EŞLEŞTİRME (İsme göre bul)
+    # Keras'ta başlıkları 'asama' ve 'duygu' olarak isimlendirmiştik
+    # =====================================================
+    idx_stage = next(o['index'] for o in output_details if 'asama' in o['name'])
+    idx_emotion = next(o['index'] for o in output_details if 'duygu' in o['name'])
+
+    stage_output = interpreter.get_tensor(idx_stage)
+    emotion_output = interpreter.get_tensor(idx_emotion)
+
+    stage_idx = int(np.argmax(stage_output[0]))
+    emotion_idx = int(np.argmax(emotion_output[0]))
+
+    final_stage = stages[stage_idx]
+    final_emotion = emotions[emotion_idx]
+
+    # =====================================================
+    # FIRESTORE SAVE
+    # =====================================================
+    try:
+        db.collection("analyses").add({
+            "userId": data.userId,
+            "inputText": data.text,
+            "stage": final_stage,
+            "emotion": final_emotion,
+            "timestamp": datetime.utcnow()
+        })
+    except Exception as e:
+        print(f"Firestore hatası: {e}")
+
+    # =====================================================
+    # RESPONSE
+    # =====================================================
+    return {
+        "stage": final_stage,
+        "emotion": final_emotion
+    }
     # =====================================================
     # INPUT
     # =====================================================

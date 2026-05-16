@@ -1,87 +1,70 @@
 import os
 os.environ["KERAS_BACKEND"] = "tensorflow"
 
-import numpy as np
 import tensorflow as tf
-from transformers import TFAutoModel
+from transformers import TFBertModel, BertConfig
 
 # =========================================================
-# CONFIG (Hata mesajına göre 64 olarak güncellendi)
+# CONFIG
 # =========================================================
 model_name = "ytu-ce-cosmos/turkish-small-bert-uncased"
-num_stages = 5     
-num_emotions = 6   
-max_length = 64    # Hata mesajındaki shape=(1, 64) ile eşitlendi
+num_stages = 5     # Yeni mapping sonrası Aşama sayısı: 5
+num_emotions = 5   # Yeni mapping sonrası Duygu sayısı: 5
+max_length = 64    
 
 # =========================================================
-# MODEL MİMARİSİ
+# MODEL MİMARİSİNİ YENİDEN KURMA (Functional API)
 # =========================================================
-class ModelSenaryo2(tf.keras.Model):
-    def __init__(self, bert_backbone, num_stages, num_emotions):
-        super().__init__()
-        self.bert = bert_backbone
-        self.dropout = tf.keras.layers.Dropout(0.4)
-        self.stage_head = tf.keras.layers.Dense(num_stages, activation='softmax', name='asama')
-        self.emotion_head = tf.keras.layers.Dense(num_emotions, activation='softmax', name='duygu')
+print("Mimari kuruluyor...")
 
-    # input_signature kısmını liste [ ... ] yapısına çevirerek hatayı çözüyoruz
-    @tf.function(input_signature=[
-        [tf.TensorSpec(shape=[None, max_length], dtype=tf.int32, name="input_ids"),
-         tf.TensorSpec(shape=[None, max_length], dtype=tf.int32, name="attention_mask")]
-    ])
-    def call(self, inputs, training=False):
-        input_ids, attention_mask = inputs[0], inputs[1]
-        
-        cls_token = self.bert(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            training=training
-        ).pooler_output
-        
-        x = self.dropout(cls_token, training=training)
-        return {
-            'asama': self.stage_head(x),
-            'duygu': self.emotion_head(x)
-        }
+# Transformers yapısı
+config = BertConfig.from_pretrained(model_name)
+bert_backbone = TFBertModel(config)
+
+# Girişler
+input_ids = tf.keras.layers.Input(shape=(max_length,), dtype=tf.int32, name="input_ids")
+attention_mask = tf.keras.layers.Input(shape=(max_length,), dtype=tf.int32, name="attention_mask")
+
+# Bağlantılar
+bert_outputs = bert_backbone(input_ids=input_ids, attention_mask=attention_mask)
+cls_token = bert_outputs.pooler_output
+dropout = tf.keras.layers.Dropout(0.3)(cls_token)
+
+# Çıkışlar
+stage_head = tf.keras.layers.Dense(num_stages, activation='softmax', name='asama')(dropout)
+emotion_head = tf.keras.layers.Dense(num_emotions, activation='softmax', name='duygu')(dropout)
+
+# Modeli Birleştirme
+model = tf.keras.Model(inputs=[input_ids, attention_mask], outputs=[stage_head, emotion_head])
 
 # =========================================================
-# MODELİ YÜKLEME SÜRECİ
+# AĞIRLIKLARI YÜKLEME
 # =========================================================
-print("Backbone yükleniyor...")
-bert_backbone = TFAutoModel.from_pretrained(model_name)
-
-print("Model oluşturuluyor...")
-model = ModelSenaryo2(bert_backbone, num_stages, num_emotions)
-
-print("Weights yükleniyor...")
-model.load_weights("house_md_model.h5", by_name=True, skip_mismatch=True)
+print("Eğitilmiş ağırlıklar yükleniyor (senaryo2.h5)...")
+# Eğittiğimiz Functional modelin ağırlıklarını doğrudan içeri alıyoruz
+model.load_weights("senaryo2.h5")
 
 # =========================================================
-# TFLITE DÖNÜŞÜMÜ
+# TFLITE DÖNÜŞÜMÜ (Artık çok daha basit!)
 # =========================================================
 print("TFLite dönüşümü başlıyor...")
 
-# Burada da concrete_func imzasını liste yapısına çektik
-run_model = tf.function(lambda x: model(x, training=False))
-concrete_func = run_model.get_concrete_function([
-    tf.TensorSpec(shape=[1, max_length], dtype=tf.int32, name="input_ids"),
-    tf.TensorSpec(shape=[1, max_length], dtype=tf.int32, name="attention_mask")
-])
-
-# Dönüştürücü kurulumu
-converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func], model)
+# Doğrudan Keras modelinden dönüştürücü oluştur
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
 
 converter.optimizations = [tf.lite.Optimize.DEFAULT]
 converter.target_spec.supported_ops = [
     tf.lite.OpsSet.TFLITE_BUILTINS,
     tf.lite.OpsSet.SELECT_TF_OPS
 ]
+# İsteğe bağlı: Modeli daha da küçültmek için float16 optimizasyonu
 converter.target_spec.supported_types = [tf.float16]
 
-# Dönüştür ve Kaydet
+# Dönüştür
 tflite_model = converter.convert()
 
-with open("house_md_small.tflite", "wb") as f:
+# Kaydet
+with open("house_md_senaryo2.tflite", "wb") as f:
     f.write(tflite_model)
 
-print("🚀 Muhteşem! TFLite Modeli Başarıyla Oluşturuldu: house_md_small.tflite")
+print("🚀 Muhteşem! TFLite Modeli Başarıyla Oluşturuldu: house_md_senaryo2.tflite")
