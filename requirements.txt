@@ -1,8 +1,7 @@
-fastapi
-uvicorn
+fastapi==0.115.12
+uvicorn==0.34.2
 tensorflow==2.16.1
-transformers
-firebase-admin
-numpy
-sentencepiece
-torch
+transformers==4.51.3
+firebase-admin==6.8.0
+numpy==1.26.4
+sentencepiece==0.2.0

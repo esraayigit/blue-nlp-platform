@@ -1,5 +1,8 @@
 import os
+
 os.environ["KERAS_BACKEND"] = "tensorflow"
+os.environ["TRANSFORMERS_NO_TF"] = "1"
+os.environ["TRANSFORMERS_NO_FLAX"] = "1"
 
 import json
 import uvicorn
