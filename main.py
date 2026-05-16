@@ -153,12 +153,15 @@ async def analyze_text(data: PatientData):
     # GÜVENLİ OUTPUT EŞLEŞTİRME (İsme göre bul)
     # Keras'ta başlıkları 'asama' ve 'duygu' olarak isimlendirmiştik
     # =====================================================
-    idx_stage = next(o['index'] for o in output_details if 'asama' in o['name'])
-    idx_emotion = next(o['index'] for o in output_details if 'duygu' in o['name'])
-
-    stage_output = interpreter.get_tensor(idx_stage)
-    emotion_output = interpreter.get_tensor(idx_emotion)
-
+    # =====================================================
+    # OUTPUT EŞLEŞTİRME (İndekse göre bul)
+    # =====================================================
+    # TFLite çıkışları genellikle modeldeki tanımlanma sırasına göre indekslenir.
+    # Modelde önce stage_head (0), sonra emotion_head (1) tanımlandı.
+    
+    stage_output = interpreter.get_tensor(output_details[0]['index'])
+    emotion_output = interpreter.get_tensor(output_details[1]['index'])
+    
     stage_idx = int(np.argmax(stage_output[0]))
     emotion_idx = int(np.argmax(emotion_output[0]))
 
