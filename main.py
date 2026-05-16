@@ -53,7 +53,7 @@ print("Tokenizer hazır.")
 print("TFLite model yükleniyor...")
 
 interpreter = tf.lite.Interpreter(
-    model_path="house_md_small.tflite"
+    model_path="house_md_senaryo2.tflite"
 )
 
 interpreter.allocate_tensors()
