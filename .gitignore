@@ -1,0 +1,7 @@
+__pycache__/
+.env
+house_md_model.h5
+house_md_model.keras
+venv/
+.vscode/
+*.pyc
