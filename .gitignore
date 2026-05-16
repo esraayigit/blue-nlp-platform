@@ -5,3 +5,4 @@ house_md_model.keras
 venv/
 .vscode/
 *.pyc
+serviceAccountKey.json
