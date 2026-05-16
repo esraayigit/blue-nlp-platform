@@ -51,10 +51,14 @@ emotions = ['Nötr/Ciddi', 'Alaycı', 'Empatik/Düşünceli', 'Kaygılı/Korkmu�
 # =========================================================
 # TFLITE MODEL
 # =========================================================
+# =========================================================
+# TFLITE MODEL
+# =========================================================
 
 print("TFLite model yükleniyor...")
-# BURAYA YENİ TFLITE DOSYASININ ADINI YAZIN
-interpreter = tf.lite.Interpreter(model_path="house_md_v2.tflite")
+import tflite_runtime.interpreter as tflite
+
+interpreter = tflite.Interpreter(model_path="house_md_v2.tflite")
 interpreter.allocate_tensors()
 
 input_details = interpreter.get_input_details()
@@ -62,14 +66,12 @@ output_details = interpreter.get_output_details()
 
 print("TFLite model hazır.")
 
-# [1 6] -> Emotion (Alfabetik sırada 'e' önce gelir)
-INDEX_EMOTION = next(o['index'] for o in output_details if o['shape'][1] == 6 and 'StatefulPartitionedCall:0' in o['name'])
-# [1 6] -> Intent (Alfabetik sırada 'i' sonra gelir)
-INDEX_INTENT = next(o['index'] for o in output_details if o['shape'][1] == 6 and 'StatefulPartitionedCall:1' in o['name'])
-# [1 4] -> Stage (Alfabetik sırada 's' sonra gelir)
-INDEX_STAGE = next(o['index'] for o in output_details if o['shape'][1] == 4 and 'StatefulPartitionedCall:2' in o['name'])
-# [1 1] -> Sarcasm (Alfabetik sırada 's' sonra gelir)
-INDEX_SARCASM = next(o['index'] for o in output_details if o['shape'][1] == 1 and 'StatefulPartitionedCall:3' in o['name'])
+# Görseldeki eğitim sırasına göre indeks eşlemeleri:
+# predictions[0] -> Sarcasm, predictions[1] -> Intent, predictions[2] -> Stage, predictions[3] -> Emotion
+INDEX_SARCASM = output_details[0]['index']
+INDEX_INTENT  = output_details[1]['index']
+INDEX_STAGE   = output_details[2]['index']
+INDEX_EMOTION = output_details[3]['index']
 # =========================================================
 # FASTAPI APP
 # =========================================================
@@ -98,11 +100,16 @@ def predict(data: PredictRequest):
     input_ids = np.array(tokens["input_ids"], dtype=np.int32)
     attention_mask = np.array(tokens["attention_mask"], dtype=np.int32)
 
-    # =====================================================
+# =====================================================
     # INFERENCE (TAHMİN)
     # =====================================================
-    interpreter.set_tensor(input_details[0]['index'], attention_mask)
-    interpreter.set_tensor(input_details[1]['index'], input_ids)
+    # Girdilerin (input_ids ve attention_mask) hangisinin 0 hangisinin 1 olduğunu 
+    # isme göre eşleştirerek hata riskini sıfıra indiriyoruz:
+    for detail in input_details:
+        if "input_ids" in detail["name"]:
+            interpreter.set_tensor(detail["index"], input_ids)
+        elif "attention_mask" in detail["name"]:
+            interpreter.set_tensor(detail["index"], attention_mask)
 
     interpreter.invoke()
 
@@ -115,12 +122,11 @@ def predict(data: PredictRequest):
     out_stage = interpreter.get_tensor(INDEX_STAGE)[0]
     out_emotion = interpreter.get_tensor(INDEX_EMOTION)[0]
 
-    # Değerleri anlamlandırma
+    # Değerleri anlamlandırma (Burası harika, aynen kalıyor)
     final_sarcasm = "Evet" if out_sarcasm > 0.5 else "Hayır"
     final_intent = intents[np.argmax(out_intent)]
     final_stage = stages[np.argmax(out_stage)]
     final_emotion = emotions[np.argmax(out_emotion)]
-
     # =====================================================
     # FIRESTORE SAVE
     # =====================================================
